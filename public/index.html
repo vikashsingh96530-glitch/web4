@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Secure Connect Platform</title>
+  <style>
+    :root { font-family: Arial, sans-serif; color: #172033; background: #eef3ff; }
+    body { max-width: 980px; margin: 30px auto; padding: 0 16px; }
+    h1 { color: #2348a8; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap: 16px; }
+    .card { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 4px 16px #3155a322; }
+    input, textarea, button { width: 100%; box-sizing: border-box; margin: 6px 0; padding: 10px; }
+    button { border: 0; border-radius: 6px; background: #315ec9; color: white; font-weight: bold; cursor: pointer; }
+    #chatMessages { height: 210px; overflow-y: auto; background: #f7f9fe; padding: 8px; }
+    #chatMessages p { margin: 5px 0; }
+    pre { white-space: pre-wrap; background: #10203e; color: #dfeaff; padding: 10px; min-height: 40px; }
+  </style>
+</head>
+<body>
+  <h1>Secure Connect & Communication Platform</h1>
+  <div class="grid">
+    <section class="card">
+      <h2>Signup</h2>
+      <input id="signupName" placeholder="Name">
+      <input id="signupEmail" type="email" placeholder="Email">
+      <input id="signupPassword" type="password" placeholder="Password">
+      <button id="signupBtn">Sign Up</button>
+    </section>
+
+    <section class="card">
+      <h2>Login</h2>
+      <input id="loginEmail" type="email" placeholder="Email">
+      <input id="loginPassword" type="password" placeholder="Password">
+      <button id="loginBtn">Login</button>
+      <button id="profileBtn">Load Protected Profile</button>
+    </section>
+
+    <section class="card">
+      <h2>Notes API</h2>
+      <input id="noteTitle" placeholder="Note title">
+      <textarea id="noteContent" placeholder="Note content"></textarea>
+      <button id="createNoteBtn">Create Note</button>
+      <button id="loadNotesBtn">Load My Notes</button>
+    </section>
+
+    <section class="card">
+      <h2>Real-time Chat</h2>
+      <div id="chatMessages"></div>
+      <input id="chatInput" placeholder="Type a message">
+      <button id="sendChatBtn">Send Message</button>
+    </section>
+  </div>
+  <h2>API Output</h2>
+  <pre id="output">Click a button to test the platform.</pre>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    let token = '';
+    let socket = null;
+    const out = document.querySelector('#output');
+
+    function show(value) {
+      out.textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    }
+
+    async function api(path, options = {}) {
+      const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+      if (token) headers.Authorization = 'Bearer ' + token;
+      const response = await fetch(path, { ...options, headers });
+      const body = await response.json();
+      show({ status: response.status, body });
+      return body;
+    }
+
+    async function signup() {
+      await api('/api/auth/signup', { method: 'POST', body: JSON.stringify({
+        name: document.querySelector('#signupName').value,
+        email: document.querySelector('#signupEmail').value,
+        password: document.querySelector('#signupPassword').value
+      }) });
+    }
+
+    async function login() {
+      const body = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({
+        email: document.querySelector('#loginEmail').value,
+        password: document.querySelector('#loginPassword').value
+      }) });
+      if (body.token) {
+        token = body.token;
+        connectChat();
+      }
+    }
+
+    function connectChat() {
+      if (socket) socket.disconnect();
+      socket = io({ auth: { token } });
+      socket.on('chat:message', (message) => {
+        const p = document.createElement('p');
+        p.textContent = `${message.sender}: ${message.text}`;
+        document.querySelector('#chatMessages').appendChild(p);
+      });
+      socket.on('connect_error', (error) => show({ socketError: error.message }));
+    }
+
+    document.querySelector('#signupBtn').addEventListener('click', signup);
+    document.querySelector('#loginBtn').addEventListener('click', login);
+    document.querySelector('#profileBtn').addEventListener('click', () => api('/api/profile'));
+    document.querySelector('#createNoteBtn').addEventListener('click', () => api('/api/notes', { method: 'POST', body: JSON.stringify({
+      title: document.querySelector('#noteTitle').value,
+      content: document.querySelector('#noteContent').value
+    }) }));
+    document.querySelector('#loadNotesBtn').addEventListener('click', () => api('/api/notes'));
+    document.querySelector('#sendChatBtn').addEventListener('click', () => {
+      if (!socket?.connected) return show({ error: 'Login before using chat' });
+      const input = document.querySelector('#chatInput');
+      socket.emit('chat:message', { text: input.value });
+      input.value = '';
+    });
+  </script>
+</body>
+</html>
